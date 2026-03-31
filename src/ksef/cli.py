@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import click
+import requests
 import typer
 
 from ksef.config import load_config
@@ -21,6 +24,8 @@ from ksef.store import (
     resolve_invoice_id,
     search_invoices,
 )
+from ksef.parser import parse_invoice
+from ksef.sync import run_sync
 
 app = typer.Typer(
     name="ksef",
@@ -60,7 +65,6 @@ def dashboard(ctx: typer.Context) -> None:
 def help(ctx: typer.Context) -> None:
     """Show help."""
     # Re-invoke with --help so typer prints the full help text
-    import click
     click.echo(ctx.parent.get_help())
 
 
@@ -75,11 +79,22 @@ def sync(
     cfg = load_config()
 
     if force:
-        from datetime import datetime, timedelta, timezone
         date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    from ksef.sync import run_sync
-    run_sync(cfg, date_from=date_from, date_to=date_to, max_invoices=max_invoices)
+    try:
+        run_sync(cfg, date_from=date_from, date_to=date_to, max_invoices=max_invoices)
+    except requests.exceptions.ConnectionError as e:
+        reason = e
+        while reason.__cause__:
+            reason = reason.__cause__
+        err_console.print(f"[red]Connection error:[/red] {reason}")
+        raise typer.Exit(1)
+    except requests.exceptions.Timeout as e:
+        err_console.print(f"[red]Timeout:[/red] {e}")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        err_console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @app.command(name="list")
@@ -148,7 +163,6 @@ def show(
         err_console.print(f"[red]XML file not found for:[/red] {ksef_number}")
         raise typer.Exit(1)
 
-    from ksef.parser import parse_invoice
     invoice = parse_invoice(xml_content, ksef_number=ksef_number)
     invoice.synced_at = meta.get("synced_at", "")
 

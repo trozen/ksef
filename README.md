@@ -18,6 +18,14 @@ uv tool install .
 
 Requires Python 3.12+.
 
+## Getting a KSeF Token
+
+The `token_path` in the config must point to a file containing your KSeF API authorization token (klucz autoryzacyjny).
+
+Log into https://ap.ksef.mf.gov.pl, authenticate with Profil Zaufany or a qualified electronic signature, and generate a token with at least invoice-reading permissions. Save the token value to a file (e.g. `~/.config/trozen/ksef/ksef.token`).
+
+Official documentation: https://ksef.podatki.gov.pl
+
 ## Configuration
 
 Create `~/.config/trozen/ksef/config.toml`:

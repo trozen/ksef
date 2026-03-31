@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import tomli_w
+from rich.console import Console
 
 CONFIG_DIR = Path.home() / ".config" / "trozen" / "ksef"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
@@ -92,7 +93,6 @@ def load_config() -> Config:
 
     errors = cfg.validate()
     if errors:
-        from rich.console import Console
         console = Console(stderr=True)
         console.print(f"[red]Configuration errors in {CONFIG_PATH}:[/red]")
         for err in errors:
@@ -121,7 +121,6 @@ def save_config(cfg: Config) -> None:
 
 
 def _print_config_instructions() -> None:
-    from rich.console import Console
     console = Console(stderr=True)
     console.print(f"[red]Config file not found:[/red] {CONFIG_PATH}")
     console.print()
