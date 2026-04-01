@@ -1,6 +1,6 @@
 [project]
 name = "ksef"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI tool for browsing and managing Polish e-invoices from KSeF"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -7,6 +7,8 @@ import click
 import requests
 import typer
 
+from ksef import __version__
+
 from ksef.config import load_config
 from ksef.display import (
     console,
@@ -36,6 +38,12 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"ksef {__version__}")
+        raise typer.Exit()
+
+
 def _print_commands_hint() -> None:
     commands = [
         ("ksef sync", "Fetch new invoices from KSeF"),
@@ -48,10 +56,14 @@ def _print_commands_hint() -> None:
 
 
 @app.callback(invoke_without_command=True)
-def dashboard(ctx: typer.Context) -> None:
+def dashboard(
+    ctx: typer.Context,
+    version: Optional[bool] = typer.Option(None, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit"),
+) -> None:
     """Show dashboard with config summary and recent invoices."""
     if ctx.invoked_subcommand is not None:
         return
+    typer.echo(f"ksef {__version__}")
     cfg = load_config()
     sync_state = load_sync_state(cfg)
     invoices = load_all_metadata(cfg)

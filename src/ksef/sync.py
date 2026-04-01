@@ -5,16 +5,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from rich.console import Console
-
 from ksef.client import KSeFClient
 from ksef.config import Config
-from ksef.display import render_sync_summary
+from ksef.display import console, err_console, render_sync_summary
 from ksef.parser import parse_invoice
 from ksef.store import add_invoice, has_invoice, load_all_metadata, load_sync_state, save_sync_state
-
-console = Console()
-err_console = Console(stderr=True)
 
 
 def _iso_now() -> str:

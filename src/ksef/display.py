@@ -113,7 +113,7 @@ def render_invoice_detail(invoice: Invoice, xml_path: str | None = None) -> None
     header.append(f"  [bold]KSeF:[/bold]      {invoice.ksef_number}")
     header.append(f"  [bold]Seller:[/bold]    {escape(invoice.seller.name)}")
     header.append(f"             [dim]NIP {format_nip(invoice.seller.nip)}[/dim]")
-    header.append(f"  [bold]Buyer:[/bold]     {invoice.buyer.name}")
+    header.append(f"  [bold]Buyer:[/bold]     {escape(invoice.buyer.name)}")
     header.append(f"             [dim]NIP {format_nip(invoice.buyer.nip)}[/dim]")
     header.append("")
     header.append(f"  Issue date:  [cyan]{invoice.issue_date}[/cyan]    Currency: {currency}")
@@ -180,7 +180,7 @@ def render_invoice_detail(invoice: Invoice, xml_path: str | None = None) -> None
     # Extra fields (DodatkowyOpis)
     if invoice.extras:
         for key, val in invoice.extras.items():
-            console.print(f"  [dim]{key}:[/dim]  {val}")
+            console.print(f"  [dim]{escape(key)}:[/dim]  {escape(val)}")
         console.print()
 
     if xml_path:

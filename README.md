@@ -1,30 +1,22 @@
 # ksef
 
-CLI tool for browsing and managing Polish e-invoices from [KSeF](https://www.podatki.gov.pl/ksef/) (Krajowy System e-Faktur).
-
-Syncs invoices from the KSeF API and stores them locally for offline browsing.
+CLI tool for browsing Polish e-invoices from [KSeF](https://www.podatki.gov.pl/ksef/) (Krajowy System e-Faktur). Syncs invoices from the KSeF API and stores them locally for offline browsing and search.
 
 ## Installation
 
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.12+.
+
+**Run directly from the repo** (no install needed):
+
 ```
-uv pip install .
+uv run ksef
 ```
 
-Or install as a standalone tool:
+**Or install globally** and run as `ksef`:
 
 ```
 uv tool install .
 ```
-
-Requires Python 3.12+.
-
-## Getting a KSeF Token
-
-The `token_path` in the config must point to a file containing your KSeF API authorization token (klucz autoryzacyjny).
-
-Log into https://ap.ksef.mf.gov.pl, authenticate with Profil Zaufany or a qualified electronic signature, and generate a token with at least invoice-reading permissions. Save the token value to a file (e.g. `~/.config/trozen/ksef/ksef.token`).
-
-Official documentation: https://ksef.podatki.gov.pl
 
 ## Configuration
 
@@ -35,12 +27,20 @@ Create `~/.config/trozen/ksef/config.toml`:
 nip = "YOUR_NIP"
 environment = "prod"          # test / demo / prod
 token_path = "/path/to/your/ksef.token"
-data_dir = "/path/to/safe/storage/ksef"
+data_dir = "/path/to/safe/storage/ksef"  # where invoices will be stored
 
 [ksef.sync]
-date_from = "2026-01-01"
+date_from = "2026-01-01"      # earliest date to sync from
 max_per_sync = 100
 ```
+
+## Getting a KSeF Token
+
+Log into https://ap.ksef.mf.gov.pl, authenticate with Profil Zaufany or a qualified electronic signature, and generate a token with at least invoice-reading permissions. Save the token value to the file referenced by `token_path` in the config (e.g. `~/.config/trozen/ksef/ksef.token`).
+
+Treat the token as a password — keep it out of version control and restrict file permissions (`chmod 600`).
+
+Official documentation: https://ksef.podatki.gov.pl
 
 ## Usage
 
@@ -56,3 +56,7 @@ ksef show 1              # show invoice #1 from the list
 ksef show FV/1/01        # match by invoice number
 ksef show Januszex       # match by seller name
 ```
+
+## Disclaimer
+
+This software is provided as-is, without any warranty. The author is not responsible for any data loss, financial damage, or other consequences arising from its use. Always verify synced data against the official KSeF portal.
