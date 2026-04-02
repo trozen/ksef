@@ -1,6 +1,6 @@
 # ksef
 
-CLI tool for browsing Polish e-invoices from [KSeF](https://www.podatki.gov.pl/ksef/) (Krajowy System e-Faktur). Syncs invoices from the KSeF API and stores them locally for offline browsing and search.
+CLI tool for managing Polish e-invoices via [KSeF](https://www.podatki.gov.pl/ksef/) (Krajowy System e-Faktur). Syncs received and issued invoices from the KSeF API, stores them locally for offline browsing and search, and supports sending invoice XML files directly to KSeF.
 
 ## Installation
 
@@ -20,7 +20,7 @@ uv tool install .
 
 ## Configuration
 
-Create `~/.config/trozen/ksef/config.toml`:
+Create `~/.config/trozen/ksef/config.toml` (or run `ksef init` to generate a template):
 
 ```toml
 [ksef]
@@ -28,11 +28,14 @@ nip = "YOUR_NIP"
 environment = "prod"          # test / demo / prod
 token_path = "/path/to/your/ksef.token"
 data_dir = "/path/to/safe/storage/ksef"  # where invoices will be stored
+# allow_send = true           # uncomment to enable ksef send
 
 [ksef.sync]
 date_from = "2026-01-01"      # earliest date to sync from
 max_per_sync = 100
 ```
+
+Run `ksef config` to verify the resolved configuration.
 
 ## Getting a KSeF Token
 
@@ -47,14 +50,23 @@ Official documentation: https://ksef.podatki.gov.pl
 Running `ksef` with no arguments shows a dashboard with config summary and recent invoices.
 
 ```
-ksef                     # dashboard
-ksef sync                # fetch new invoices (incremental)
-ksef sync -f             # force re-sync last 30 days
-ksef list                # list all invoices
-ksef list -s Januszex    # filter by seller
-ksef show 1              # show invoice #1 from the list
-ksef show FV/1/01        # match by invoice number
-ksef show Januszex       # match by seller name
+ksef                       # dashboard
+ksef sync                  # fetch new invoices (incremental)
+ksef sync -f               # force re-sync last 30 days
+ksef list                  # list all invoices (received and issued)
+ksef list -s Januszex      # filter by seller
+ksef show 1                # show invoice #1 from the list
+ksef show FV/1/01          # match by invoice number
+ksef show Januszex         # match by seller name
+```
+
+**Sending invoices** (requires `allow_send = true` in config):
+
+```
+ksef validate invoice.xml  # validate against FA(3) schema
+ksef send invoice.xml      # send to KSeF, save UPO as invoice.upo.xml
+ksef send invoice.xml --upo /path/to/upo.xml
+ksef session <ref>         # check session status / retrieve UPO manually
 ```
 
 ## Disclaimer

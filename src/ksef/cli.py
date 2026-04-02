@@ -87,6 +87,7 @@ def _print_commands_hint() -> None:
         ("ksef list", "List all invoices"),
         ("ksef show", "Show invoice details"),
         ("ksef send", "Send an invoice XML to KSeF"),
+        ("ksef config", "Show resolved config"),
         ("ksef -h", "Full help"),
     ]
     for cmd, desc in commands:
@@ -148,6 +149,8 @@ def config(
     config_path: Path = ctx.obj["config_path"]
     cfg = load_config(config_path)
     console.print(f"[bold]Config file:[/bold] {config_path}")
+    console.print(f"  [dim]Override with -c, KSEF_CONFIG env var, or ./ksef.config.toml[/dim]")
+    console.print()
     console.print(f"  NIP:         {cfg.nip}")
     console.print(f"  Environment: {cfg.environment}")
     console.print(f"  Token:       {cfg.token_path}")
