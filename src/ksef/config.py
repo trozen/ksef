@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -10,11 +11,18 @@ from rich.console import Console
 
 CONFIG_DIR = Path.home() / ".config" / "trozen" / "ksef"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
+LOCAL_CONFIG_NAME = "ksef.config.toml"
 
 KSEF_ENVIRONMENTS = {
     "test": "https://api-test.ksef.mf.gov.pl/v2",
     "demo": "https://api-demo.ksef.mf.gov.pl/v2",
     "prod": "https://api.ksef.mf.gov.pl/v2",
+}
+
+KSEF_QR_BASE_URLS = {
+    "test": "https://qr-test.ksef.mf.gov.pl",
+    "demo": "https://qr-demo.ksef.mf.gov.pl",
+    "prod": "https://qr.ksef.mf.gov.pl",
 }
 
 
@@ -30,6 +38,7 @@ class Config:
     environment: str = "prod"
     token_path: str = ""
     data_dir: str = ""
+    allow_send: bool = False
     sync: SyncConfig = field(default_factory=SyncConfig)
 
     @property
@@ -52,6 +61,10 @@ class Config:
     def session_cache_path(self) -> Path:
         return self.data_path / "session-cache.json"
 
+    @property
+    def pending_sessions_path(self) -> Path:
+        return self.data_path / "pending-sessions.json"
+
     def validate(self) -> list[str]:
         errors = []
         if not self.nip:
@@ -69,12 +82,36 @@ class Config:
         return errors
 
 
-def load_config() -> Config:
-    if not CONFIG_PATH.exists():
-        _print_config_instructions()
+def resolve_config_path(cli_path: str | None = None) -> Path:
+    """Resolve config path: CLI flag > KSEF_CONFIG env var > local ksef.config.toml > default."""
+    if cli_path:
+        return Path(cli_path)
+    env_path = os.environ.get("KSEF_CONFIG")
+    if env_path:
+        return Path(env_path)
+    local = Path.cwd() / LOCAL_CONFIG_NAME
+    if local.exists():
+        return local
+    return CONFIG_PATH
+
+
+def peek_environment(path: Path) -> str | None:
+    """Read just the environment field from config without full validation."""
+    try:
+        with open(path, "rb") as f:
+            raw = tomllib.load(f)
+        return raw.get("ksef", {}).get("environment")
+    except Exception:
+        return None
+
+
+def load_config(path: Path | None = None) -> Config:
+    config_path = path or CONFIG_PATH
+    if not config_path.exists():
+        _print_config_instructions(config_path)
         sys.exit(1)
 
-    with open(CONFIG_PATH, "rb") as f:
+    with open(config_path, "rb") as f:
         raw = tomllib.load(f)
 
     ksef = raw.get("ksef", {})
@@ -85,6 +122,7 @@ def load_config() -> Config:
         environment=ksef.get("environment", "prod"),
         token_path=ksef.get("token_path", ""),
         data_dir=ksef.get("data_dir", ""),
+        allow_send=bool(ksef.get("allow_send", False)),
         sync=SyncConfig(
             date_from=sync_raw.get("date_from", "2026-01-01"),
             max_per_sync=sync_raw.get("max_per_sync", 100),
@@ -94,7 +132,7 @@ def load_config() -> Config:
     errors = cfg.validate()
     if errors:
         console = Console(stderr=True)
-        console.print(f"[red]Configuration errors in {CONFIG_PATH}:[/red]")
+        console.print(f"[red]Configuration errors in {config_path}:[/red]")
         for err in errors:
             console.print(f"  [red]•[/red] {err}")
         sys.exit(1)
@@ -120,9 +158,9 @@ def save_config(cfg: Config) -> None:
         tomli_w.dump(data, f)
 
 
-def _print_config_instructions() -> None:
+def _print_config_instructions(path: Path | None = None) -> None:
     console = Console(stderr=True)
-    console.print(f"[red]Config file not found:[/red] {CONFIG_PATH}")
+    console.print(f"[red]Config file not found:[/red] {path or CONFIG_PATH}")
     console.print()
     console.print("Create it with the following contents:")
     console.print()

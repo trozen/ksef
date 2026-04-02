@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import json
 import time
 from datetime import datetime, timezone
@@ -9,7 +10,20 @@ from ksef.client import KSeFClient
 from ksef.config import Config
 from ksef.display import console, err_console, render_sync_summary
 from ksef.parser import parse_invoice
-from ksef.store import add_invoice, has_invoice, load_all_metadata, load_sync_state, save_sync_state
+from ksef.store import (
+    BUYER, SELLER,
+    add_invoice, has_invoice, load_all_metadata, load_sync_state, save_sync_state,
+)
+
+# Imported lazily to avoid circular import (send imports sync for _authenticate)
+def _check_pending_sessions(cfg, client, access_token):
+    from ksef.send import check_pending_sessions
+    check_pending_sessions(cfg, client, access_token)
+
+_SUBJECT_TYPE = {
+    BUYER: "Subject2",
+    SELLER: "Subject1",
+}
 
 
 def _iso_now() -> str:
@@ -107,8 +121,28 @@ def _authenticate(client: KSeFClient, cfg: Config) -> str:
     return tokens.access_token
 
 
-def _determine_date_range(cfg: Config, date_from: str | None, date_to: str | None) -> tuple[str, str]:
-    """Determine query date range, using sync state for incremental sync."""
+def _add_months(dt: datetime, months: int) -> datetime:
+    month = dt.month + months
+    year = dt.year + (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    max_day = calendar.monthrange(year, month)[1]
+    return dt.replace(year=year, month=month, day=min(dt.day, max_day))
+
+
+def _date_chunks(from_dt: str, to_dt: str, months: int = 1) -> list[tuple[str, str]]:
+    """Split a date range into chunks of the given number of months."""
+    start = datetime.fromisoformat(from_dt)
+    end = datetime.fromisoformat(to_dt)
+    chunks = []
+    current = start
+    while current < end:
+        chunk_end = min(_add_months(current, months), end)
+        chunks.append((current.isoformat(), chunk_end.isoformat()))
+        current = chunk_end
+    return chunks
+
+
+def _determine_date_range(cfg: Config, date_from: str | None, date_to: str | None, direction_state: dict | None) -> tuple[str, str]:
     if date_to:
         to_dt = date_to if "T" in date_to else f"{date_to}T23:59:59+00:00"
     else:
@@ -117,13 +151,63 @@ def _determine_date_range(cfg: Config, date_from: str | None, date_to: str | Non
     if date_from:
         from_dt = date_from if "T" in date_from else f"{date_from}T00:00:00+00:00"
     else:
-        sync_state = load_sync_state(cfg)
-        if sync_state and sync_state.get("last_sync_date_to"):
-            from_dt = sync_state["last_sync_date_to"]
+        if direction_state and direction_state.get("last_sync_date_to"):
+            from_dt = direction_state["last_sync_date_to"]
         else:
             from_dt = f"{cfg.sync.date_from}T00:00:00+00:00"
 
     return from_dt, to_dt
+
+
+def _sync_direction(
+    cfg: Config,
+    client: KSeFClient,
+    access_token: str,
+    direction: str,
+    date_from: str | None,
+    date_to: str | None,
+    max_count: int,
+) -> int:
+    sync_state = load_sync_state(cfg)
+    from_dt, to_dt = _determine_date_range(cfg, date_from, date_to, sync_state.get(direction))
+
+    console.print(f"[dim]Syncing {direction} invoices from {from_dt} to {to_dt}[/dim]")
+
+    chunks = _date_chunks(from_dt, to_dt)
+    invoices_meta = []
+    for chunk_from, chunk_to in chunks:
+        filters = {
+            "subjectType": _SUBJECT_TYPE[direction],
+            "dateRange": {"dateType": "PermanentStorage", "from": chunk_from, "to": chunk_to},
+        }
+        chunk_meta = client.query_invoice_metadata(access_token, filters).get("invoices") or []
+        invoices_meta.extend(chunk_meta)
+
+    new_count = 0
+    for inv_meta in invoices_meta:
+        if new_count >= max_count:
+            break
+
+        ksef_number = inv_meta.get("ksefNumber")
+        if not ksef_number or has_invoice(cfg, ksef_number, direction):
+            continue
+
+        console.print(f"  [dim]Downloading {ksef_number}...[/dim]")
+        xml_content = client.download_invoice_xml(access_token, ksef_number)
+
+        invoice = parse_invoice(xml_content, ksef_number=ksef_number)
+        invoice.synced_at = _iso_now()
+
+        add_invoice(cfg, ksef_number, invoice.issue_date, invoice.to_metadata(), xml_content, direction)
+        new_count += 1
+
+    save_sync_state(cfg, direction, {
+        "last_sync_at": _iso_now(),
+        "last_sync_date_to": to_dt,
+        "last_sync_invoices_fetched": new_count,
+    })
+
+    return new_count
 
 
 def run_sync(
@@ -133,61 +217,13 @@ def run_sync(
     max_invoices: int | None = None,
 ) -> None:
     max_count = max_invoices or cfg.sync.max_per_sync
-    from_dt, to_dt = _determine_date_range(cfg, date_from, date_to)
-
-    console.print(f"[dim]Syncing invoices from {from_dt} to {to_dt}[/dim]")
-
     client = KSeFClient(base_url=cfg.base_url)
     access_token = _authenticate(client, cfg)
 
-    filters = {
-        "subjectType": "Subject2",
-        "dateRange": {
-            "dateType": "PermanentStorage",
-            "from": from_dt,
-            "to": to_dt,
-        },
-    }
+    _check_pending_sessions(cfg, client, access_token)
 
-    meta_response = client.query_invoice_metadata(access_token, filters)
-    invoices_meta = meta_response.get("invoices") or []
-
-    if not invoices_meta:
-        console.print("[dim]No invoices found in date range.[/dim]")
-        save_sync_state(cfg, {
-            "last_sync_at": _iso_now(),
-            "last_sync_date_to": to_dt,
-            "last_sync_invoices_fetched": 0,
-        })
-        return
-
-    new_count = 0
-    for inv_meta in invoices_meta:
-        if new_count >= max_count:
-            break
-
-        ksef_number = inv_meta.get("ksefNumber")
-        if not ksef_number:
-            continue
-
-        if has_invoice(cfg, ksef_number):
-            continue
-
-        console.print(f"  [dim]Downloading {ksef_number}...[/dim]")
-        xml_content = client.download_invoice_xml(access_token, ksef_number)
-
-        invoice = parse_invoice(xml_content, ksef_number=ksef_number)
-        invoice.synced_at = _iso_now()
-        metadata = invoice.to_metadata()
-
-        add_invoice(cfg, ksef_number, invoice.issue_date, metadata, xml_content)
-        new_count += 1
-
-    save_sync_state(cfg, {
-        "last_sync_at": _iso_now(),
-        "last_sync_date_to": to_dt,
-        "last_sync_invoices_fetched": new_count,
-    })
+    new_buyer = _sync_direction(cfg, client, access_token, BUYER, date_from, date_to, max_count)
+    new_seller = _sync_direction(cfg, client, access_token, SELLER, date_from, date_to, max_count)
 
     total = len(load_all_metadata(cfg))
-    render_sync_summary(new_count, total)
+    render_sync_summary(new_buyer, new_seller, total)

@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 class Party:
     nip: str = ""
     name: str = ""
+    address: str = ""
+    phone: str = ""
+    email: str = ""
 
 
 @dataclass
@@ -37,6 +40,8 @@ class Invoice:
     currency: str = ""
     issue_date: str = ""
     due_date: str = ""
+    period_from: str = ""
+    period_to: str = ""
     seller: Party = field(default_factory=Party)
     buyer: Party = field(default_factory=Party)
     net_amount: str = ""
@@ -45,6 +50,11 @@ class Invoice:
     line_items: list[LineItem] = field(default_factory=list)
     payment: PaymentInfo = field(default_factory=PaymentInfo)
     extras: dict[str, str] = field(default_factory=dict)
+    annotations: list[str] = field(default_factory=list)
+    contract_numbers: list[str] = field(default_factory=list)
+    footer: list[str] = field(default_factory=list)
+    krs: str = ""
+    regon: str = ""
     synced_at: str = ""
 
     def to_metadata(self) -> dict:
