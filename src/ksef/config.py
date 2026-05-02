@@ -54,6 +54,10 @@ class Config:
         return self.data_path / "invoices"
 
     @property
+    def profiles_dir(self) -> Path:
+        return self.data_path / "profiles"
+
+    @property
     def sync_state_path(self) -> Path:
         return self.data_path / "sync.json"
 

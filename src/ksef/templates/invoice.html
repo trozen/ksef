@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<style>
+@page {
+    size: A4;
+    margin: 10mm 18mm 12mm 18mm;
+    @bottom-right {
+        content: counter(page) " z " counter(pages);
+        font-size: 7.5pt;
+        color: #888;
+    }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
+    font-size: 7.5pt;
+    color: #1a1a1a;
+    line-height: 1.45;
+}
+.lang-secondary { color: #888; }
+hr {
+    border: none;
+    border-top: 1px solid #d0d0d0;
+    margin: 3mm 0;
+}
+h2 {
+    font-size: 10pt;
+    font-weight: normal;
+    color: #1a1a1a;
+    margin-bottom: 2mm;
+}
+
+/* ---------- Site / invoice header ---------- */
+.site-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 4mm;
+}
+.site-title {
+    font-size: 22pt;
+    font-weight: 300;
+    letter-spacing: -0.5px;
+}
+.site-title .e-faktur {
+    color: #d0021b;
+    font-weight: 600;
+}
+.invoice-meta {
+    text-align: right;
+    font-size: 8pt;
+    color: #1a1a1a;
+}
+.invoice-meta-label { color: #555; }
+.invoice-number {
+    font-size: 22pt;
+    font-weight: bold;
+    line-height: 1.1;
+    margin: 0.5mm 0;
+}
+.invoice-type { font-size: 8.5pt; margin-bottom: 0.5mm; }
+.ksef-number {
+    font-size: 7.5pt;
+    font-weight: bold;
+    margin-top: 1mm;
+}
+
+/* ---------- Parties ---------- */
+.parties {
+    display: flex;
+    gap: 12mm;
+}
+.party { flex: 1; font-size: 8pt; line-height: 1.4; }
+.party-section-title {
+    font-size: 10pt;
+    font-weight: normal;
+    margin-bottom: 2mm;
+}
+.party-field { margin-bottom: 0.3mm; }
+.party-field-label { font-weight: bold; }
+.party-sub-title {
+    font-weight: bold;
+    margin-top: 2mm;
+    margin-bottom: 0.3mm;
+}
+
+/* ---------- Szczegóły ---------- */
+.details-grid { display: flex; gap: 12mm; font-size: 8pt; }
+.details-col { flex: 1; }
+.detail-row { margin-bottom: 1mm; }
+.detail-label { color: #1a1a1a; }
+
+/* ---------- Tables ---------- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+}
+.data-table { table-layout: fixed; }
+.data-table th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+    padding: 1.5mm 2mm;
+    text-align: left;
+    border: 1px solid #d0d0d0;
+    vertical-align: middle;
+}
+.data-table td {
+    padding: 1.3mm 2mm;
+    border: 1px solid #d0d0d0;
+    vertical-align: top;
+    word-wrap: break-word;
+}
+.num { text-align: right; }
+
+.total-line {
+    text-align: right;
+    font-weight: bold;
+    font-size: 10.5pt;
+    margin: 3mm 0 1mm 0;
+}
+
+/* ---------- Płatność ---------- */
+.payment-block { }
+.payment-info { font-size: 8pt; margin-bottom: 2mm; }
+.payment-info .label { font-weight: bold; }
+.payment-table-small {
+    width: auto;
+    min-width: 50mm;
+    margin-bottom: 3mm;
+}
+.payment-table-small th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+    padding: 1.8mm 3mm;
+    text-align: left;
+    border: 1px solid #d0d0d0;
+}
+.payment-table-small td {
+    padding: 1.8mm 3mm;
+    border: 1px solid #d0d0d0;
+}
+.bank-table { page-break-inside: avoid; }
+.bank-table td {
+    padding: 1.4mm 2mm;
+    border: 1px solid #d0d0d0;
+    vertical-align: top;
+}
+.bank-table td.label-cell {
+    font-weight: bold;
+    background-color: #f4f4f4;
+    width: 50mm;
+    white-space: nowrap;
+}
+
+.adnotacje-list { font-size: 8pt; }
+.adnotacje-list .item { margin-bottom: 0.5mm; }
+
+/* ---------- QR page ---------- */
+.qr-page { page-break-inside: avoid; }
+.qr-title {
+    font-size: 10pt;
+    font-weight: bold;
+    margin-bottom: 4mm;
+}
+.qr-block {
+    display: flex;
+    gap: 6mm;
+    align-items: flex-start;
+}
+.qr-image { width: 35mm; height: 35mm; }
+.qr-image svg { width: 100%; height: 100%; }
+.qr-label {
+    font-size: 8pt;
+    margin-top: 1mm;
+    color: #1a1a1a;
+}
+.qr-text-block { font-size: 8pt; flex: 1; }
+.qr-text { margin-bottom: 2mm; }
+.qr-link {
+    color: #d0021b;
+    word-break: break-all;
+    text-decoration: underline;
+}
+</style>
+</head>
+<body>
+
+<!-- ============ Header ============ -->
+<div class="site-header">
+  <div class="site-title">Krajowy System <span class="e-faktur">e</span>-Faktur</div>
+  <div class="invoice-meta">
+    <div class="invoice-meta-label">{{ t.header_invoice_no }}</div>
+    <div class="invoice-number">{{ inv.invoice_number }}</div>
+    {% if invoice_type_label %}<div class="invoice-type">{{ invoice_type_label }}</div>{% endif %}
+    {% if inv.ksef_number %}<div class="ksef-number">{{ t.header_ksef_no }} {{ inv.ksef_number }}</div>{% endif %}
+  </div>
+</div>
+
+<hr>
+
+<!-- ============ Parties ============ -->
+<div class="parties">
+  <div class="party">
+    <div class="party-section-title">{{ t.section_seller }}</div>
+    {% if inv.seller.nip %}
+    <div class="party-field"><span class="party-field-label">{{ t.field_nip }}</span> {{ inv.seller.nip }}</div>
+    {% else %}
+    <div class="party-field">{{ t.no_identifier }}</div>
+    {% endif %}
+    {% if inv.seller.name %}<div class="party-field"><span class="party-field-label">{{ t.field_name }}</span> {{ inv.seller.name }}</div>{% endif %}
+    {% set seller_addr = address_lines(inv.seller) %}
+    {% if seller_addr %}
+    <div class="party-sub-title">{{ t.subtitle_address }}</div>
+    {% for line in seller_addr %}<div class="party-field">{{ line }}</div>{% endfor %}
+    {% endif %}
+    {% if inv.seller.phone %}<div class="party-field"><span class="party-field-label">{{ t.field_phone }}</span> {{ inv.seller.phone }}</div>{% endif %}
+    {% if inv.seller.email %}<div class="party-field"><span class="party-field-label">{{ t.field_email }}</span> {{ inv.seller.email }}</div>{% endif %}
+    {% if inv.regon %}<div class="party-field"><span class="party-field-label">{{ t.field_regon }}</span> {{ inv.regon }}</div>{% endif %}
+    {% if inv.krs %}<div class="party-field"><span class="party-field-label">{{ t.field_krs }}</span> {{ inv.krs }}</div>{% endif %}
+    {% if yes_no_label(inv.seller.jst) %}<div class="party-field" style="margin-top:0.8mm;">{{ t.jst_label }} {{ yes_no_label(inv.seller.jst) }}</div>{% endif %}
+    {% if yes_no_label(inv.seller.gv) %}<div class="party-field">{{ t.gv_label }} {{ yes_no_label(inv.seller.gv) }}</div>{% endif %}
+  </div>
+  <div class="party">
+    <div class="party-section-title">{{ t.section_buyer }}</div>
+    {% if inv.buyer.nip %}
+    <div class="party-field"><span class="party-field-label">{{ t.field_nip }}</span> {{ inv.buyer.nip }}</div>
+    {% else %}
+    <div class="party-field">{{ t.no_identifier }}</div>
+    {% endif %}
+    {% if inv.buyer.name %}<div class="party-field"><span class="party-field-label">{{ t.field_name }}</span> {{ inv.buyer.name }}</div>{% endif %}
+    {% set buyer_addr = address_lines(inv.buyer) %}
+    {% if buyer_addr %}
+    <div class="party-sub-title">{{ t.subtitle_address }}</div>
+    {% for line in buyer_addr %}<div class="party-field">{{ line }}</div>{% endfor %}
+    {% endif %}
+    {% if inv.buyer.phone %}<div class="party-field"><span class="party-field-label">{{ t.field_phone }}</span> {{ inv.buyer.phone }}</div>{% endif %}
+    {% if inv.buyer.email %}<div class="party-field"><span class="party-field-label">{{ t.field_email }}</span> {{ inv.buyer.email }}</div>{% endif %}
+    {% if yes_no_label(inv.buyer.jst) %}<div class="party-field" style="margin-top:0.8mm;">{{ t.jst_label }} {{ yes_no_label(inv.buyer.jst) }}</div>{% endif %}
+    {% if yes_no_label(inv.buyer.gv) %}<div class="party-field">{{ t.gv_label }} {{ yes_no_label(inv.buyer.gv) }}</div>{% endif %}
+  </div>
+</div>
+
+<hr>
+
+<!-- ============ Szczegóły ============ -->
+<h2>{{ t.section_details }}</h2>
+<div class="details-grid">
+  <div class="details-col">
+    {% if inv.issue_date %}
+    <div class="detail-row">{{ t.issue_date_long }} {{ inv.issue_date | dmy_date }}</div>
+    {% endif %}
+    {% set delivery_date = inv.period_to or (inv.due_date if inv.due_date != inv.payment.due_date else '') %}
+    {% if delivery_date %}
+    <div class="detail-row">{{ t.delivery_date_long }} {{ delivery_date | dmy_date }}</div>
+    {% endif %}
+    {% if inv.period_from and inv.period_to and inv.period_from != inv.period_to %}
+    <div class="detail-row">{{ t.billing_period }} {{ inv.period_from | dmy_date }} – {{ inv.period_to | dmy_date }}</div>
+    {% endif %}
+    {% for nr in inv.contract_numbers %}
+    <div class="detail-row">{{ t.contract_no }} {{ nr }}</div>
+    {% endfor %}
+    {% for key, val in inv.extras.items() %}
+    <div class="detail-row">{{ key }}: {{ val }}</div>
+    {% endfor %}
+  </div>
+  <div class="details-col">
+    {% if inv.place_of_issue %}
+    <div class="detail-row">{{ t.place_of_issue }} {{ inv.place_of_issue }}</div>
+    {% endif %}
+    <div class="detail-row">{{ t.currency_code }} {{ currency }}</div>
+  </div>
+</div>
+
+<hr>
+
+<!-- ============ Pozycje ============ -->
+<h2>{{ t.section_items }}</h2>
+<div style="font-size:8.5pt; margin-bottom:2mm;">{{ t.issued_in_currency.format(currency=currency) }}</div>
+
+{% if inv.line_items %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th style="width:5%;">{{ t.items_no }}</th>
+      <th style="width:50%;">{{ t.items_name }}</th>
+      <th style="width:13%;" class="num">{{ t.items_unit_price }}</th>
+      <th style="width:7%;" class="num">{{ t.items_qty }}</th>
+      <th style="width:7%;">{{ t.items_unit }}</th>
+      <th style="width:18%;" class="num">{{ t.items_net_value }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in inv.line_items %}
+    <tr>
+      <td>{{ item.line_number }}</td>
+      <td>{{ item.description }}</td>
+      <td class="num">{{ format_amount(item.unit_price, '') }}</td>
+      <td class="num">{{ item.quantity }}</td>
+      <td>{{ item.unit }}</td>
+      <td class="num">{{ format_amount(item.net_amount, '') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="total-line">{{ t.total_due }} {{ format_amount(inv.gross_amount, currency) }}</div>
+
+<hr>
+
+<!-- ============ Podsumowanie stawek podatku ============ -->
+<h2>{{ t.section_vat_summary }}</h2>
+{% if vat_summary %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th style="width:5%;">{{ t.items_no }}</th>
+      <th style="width:30%;">{{ t.vat_rate }}</th>
+      <th style="width:21%;" class="num">{{ t.vat_net }}</th>
+      <th style="width:22%;" class="num">{{ t.vat_tax }}</th>
+      <th style="width:22%;" class="num">{{ t.vat_gross }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in vat_summary %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ row.rate_label }}</td>
+      <td class="num">{{ row.net }}</td>
+      <td class="num">{{ row.vat }}</td>
+      <td class="num">{{ row.gross }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if annotations %}
+<hr>
+<h2>{{ t.section_annotations }}</h2>
+<div class="adnotacje-list">
+  {% for note in annotations %}
+  <div class="item">{{ note }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% set pay = inv.payment %}
+{% if pay.due_date or pay.bank_account or payment_form_label %}
+<hr>
+<div class="payment-block">
+  <h2>{{ t.section_payment }}</h2>
+  <div class="payment-info">
+    <div><span class="label">{{ t.payment_info_label }}</span> {{ t.payment_status_paid if pay.paid == "1" else t.payment_status_unpaid }}</div>
+    {% if payment_form_label %}<div><span class="label">{{ t.payment_method }}</span> {{ payment_form_label }}</div>{% endif %}
+  </div>
+
+  {% if pay.due_date %}
+  <table class="payment-table-small">
+    <thead>
+      <tr><th>{{ t.payment_due_date }}</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>{{ pay.due_date | dmy_date }}</td></tr>
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if pay.bank_account or pay.bank_name or pay.swift %}
+  <h2 style="font-size:9.5pt;">{{ t.section_bank_account }}</h2>
+  <table class="bank-table">
+    {% if pay.bank_account %}
+    <tr>
+      <td class="label-cell">{{ t.bank_full_account }}</td>
+      <td>{{ pay.bank_account }}</td>
+    </tr>
+    {% endif %}
+    {% if pay.swift %}
+    <tr>
+      <td class="label-cell">{{ t.bank_swift }}</td>
+      <td>{{ pay.swift }}</td>
+    </tr>
+    {% endif %}
+    {% if pay.bank_name %}
+    <tr>
+      <td class="label-cell">{{ t.bank_name }}</td>
+      <td>{{ pay.bank_name }}</td>
+    </tr>
+    {% endif %}
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if inv.footer %}
+<hr>
+<div style="font-size:8pt; color:#555;">
+{% for line in inv.footer %}
+  <div>{{ line }}</div>
+{% endfor %}
+</div>
+{% endif %}
+
+<!-- ============ QR page ============ -->
+{% if qr_svg %}
+<div class="qr-page">
+  <hr>
+  <div class="qr-title">{{ t.qr_title }}</div>
+  <div class="qr-block">
+    <div>
+      <div class="qr-image">{{ qr_svg | safe }}</div>
+      <div class="qr-label">{{ inv.ksef_number }}</div>
+    </div>
+    <div class="qr-text-block">
+      <div class="qr-text">{{ t.qr_text }}</div>
+      <a class="qr-link" href="{{ verify_url }}">{{ verify_url }}</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+</body>
+</html>

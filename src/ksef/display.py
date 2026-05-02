@@ -12,10 +12,95 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
-from ksef.models import Invoice
+from ksef.models import Invoice, Party
 
 console = Console(highlight=False)
 err_console = Console(stderr=True, highlight=False)
+
+
+COUNTRY_NAMES = {
+    "PL": {"pl": "Polska",              "en": "Poland"},
+    "DE": {"pl": "Niemcy",               "en": "Germany"},
+    "FR": {"pl": "Francja",              "en": "France"},
+    "GB": {"pl": "Wielka Brytania",      "en": "United Kingdom"},
+    "US": {"pl": "Stany Zjednoczone",    "en": "United States"},
+    "IT": {"pl": "Włochy",               "en": "Italy"},
+    "ES": {"pl": "Hiszpania",            "en": "Spain"},
+    "NL": {"pl": "Holandia",             "en": "Netherlands"},
+    "BE": {"pl": "Belgia",               "en": "Belgium"},
+    "CZ": {"pl": "Czechy",               "en": "Czech Republic"},
+    "SK": {"pl": "Słowacja",             "en": "Slovakia"},
+    "AT": {"pl": "Austria",              "en": "Austria"},
+    "CH": {"pl": "Szwajcaria",           "en": "Switzerland"},
+    "SE": {"pl": "Szwecja",              "en": "Sweden"},
+    "NO": {"pl": "Norwegia",             "en": "Norway"},
+    "DK": {"pl": "Dania",                "en": "Denmark"},
+    "FI": {"pl": "Finlandia",            "en": "Finland"},
+    "IE": {"pl": "Irlandia",             "en": "Ireland"},
+    "PT": {"pl": "Portugalia",           "en": "Portugal"},
+    "GR": {"pl": "Grecja",               "en": "Greece"},
+    "HU": {"pl": "Węgry",                "en": "Hungary"},
+    "RO": {"pl": "Rumunia",              "en": "Romania"},
+    "BG": {"pl": "Bułgaria",             "en": "Bulgaria"},
+    "HR": {"pl": "Chorwacja",            "en": "Croatia"},
+    "SI": {"pl": "Słowenia",             "en": "Slovenia"},
+    "EE": {"pl": "Estonia",              "en": "Estonia"},
+    "LV": {"pl": "Łotwa",                "en": "Latvia"},
+    "LT": {"pl": "Litwa",                "en": "Lithuania"},
+    "LU": {"pl": "Luksemburg",           "en": "Luxembourg"},
+    "MT": {"pl": "Malta",                "en": "Malta"},
+    "CY": {"pl": "Cypr",                 "en": "Cyprus"},
+    "JP": {"pl": "Japonia",              "en": "Japan"},
+    "CN": {"pl": "Chiny",                "en": "China"},
+    "CA": {"pl": "Kanada",               "en": "Canada"},
+    "AU": {"pl": "Australia",            "en": "Australia"},
+    "NZ": {"pl": "Nowa Zelandia",        "en": "New Zealand"},
+    "RU": {"pl": "Rosja",                "en": "Russia"},
+    "UA": {"pl": "Ukraina",              "en": "Ukraine"},
+    "BY": {"pl": "Białoruś",             "en": "Belarus"},
+    "JE": {"pl": "Jersey",               "en": "Jersey"},
+    "GG": {"pl": "Guernsey",             "en": "Guernsey"},
+    "IM": {"pl": "Wyspa Man",            "en": "Isle of Man"},
+    "GI": {"pl": "Gibraltar",            "en": "Gibraltar"},
+    "MC": {"pl": "Monako",               "en": "Monaco"},
+    "LI": {"pl": "Liechtenstein",        "en": "Liechtenstein"},
+    "IS": {"pl": "Islandia",             "en": "Iceland"},
+    "TR": {"pl": "Turcja",               "en": "Turkey"},
+    "MX": {"pl": "Meksyk",               "en": "Mexico"},
+    "BR": {"pl": "Brazylia",             "en": "Brazil"},
+    "AR": {"pl": "Argentyna",            "en": "Argentina"},
+    "IN": {"pl": "Indie",                "en": "India"},
+    "ZA": {"pl": "RPA",                  "en": "South Africa"},
+    "KR": {"pl": "Korea Południowa",     "en": "South Korea"},
+    "SG": {"pl": "Singapur",             "en": "Singapore"},
+    "AE": {"pl": "ZEA",                  "en": "UAE"},
+    "SA": {"pl": "Arabia Saudyjska",     "en": "Saudi Arabia"},
+    "IL": {"pl": "Izrael",               "en": "Israel"},
+}
+
+
+def country_name(code: str, lang: str = "pl") -> str:
+    if not code:
+        return ""
+    entry = COUNTRY_NAMES.get(code.upper())
+    if entry is None:
+        return code
+    if lang in ("pl", "en"):
+        return entry.get(lang, code)
+    primary, secondary = lang.split("/")
+    return f"{entry.get(primary, code)} / {entry.get(secondary, code)}"
+
+
+def address_lines(party: Party, lang: str = "pl") -> list[str]:
+    lines = [line for line in (party.address_l1, party.address_l2) if line]
+    country = country_name(party.country_code, lang)
+    if country:
+        lines.append(country)
+    return lines
+
+
+def yes_no_label(value: str) -> str:
+    return {"1": "TAK", "2": "NIE"}.get(value, "")
 
 
 def format_nip(nip: str) -> str:
@@ -135,8 +220,8 @@ def render_invoice_detail(invoice: Invoice, xml_path: str | None = None, qr_base
     header.append(f"  [bold]KSeF:[/bold]      {ksef_str}")
     header.append(f"  [bold]Seller:[/bold]    {escape(invoice.seller.name)}")
     header.append(f"             [dim]NIP {format_nip(invoice.seller.nip)}[/dim]")
-    if invoice.seller.address:
-        header.append(f"             [dim]{escape(invoice.seller.address)}[/dim]")
+    for line in address_lines(invoice.seller):
+        header.append(f"             [dim]{escape(line)}[/dim]")
     if invoice.seller.phone:
         header.append(f"             [dim]{escape(invoice.seller.phone)}[/dim]")
     if invoice.seller.email:
@@ -144,14 +229,20 @@ def render_invoice_detail(invoice: Invoice, xml_path: str | None = None, qr_base
     header.append(f"  [bold]Buyer:[/bold]     {escape(invoice.buyer.name)}")
     if invoice.buyer.nip:
         header.append(f"             [dim]NIP {format_nip(invoice.buyer.nip)}[/dim]")
-    if invoice.buyer.address:
-        header.append(f"             [dim]{escape(invoice.buyer.address)}[/dim]")
+    for line in address_lines(invoice.buyer):
+        header.append(f"             [dim]{escape(line)}[/dim]")
     if invoice.buyer.phone:
         header.append(f"             [dim]{escape(invoice.buyer.phone)}[/dim]")
     if invoice.buyer.email:
         header.append(f"             [dim]{escape(invoice.buyer.email)}[/dim]")
+    if invoice.buyer.jst == "1":
+        header.append(f"             [yellow]JST: TAK[/yellow]")
+    if invoice.buyer.gv == "1":
+        header.append(f"             [yellow]GV: TAK[/yellow]")
     header.append("")
     header.append(f"  Issue date:  [cyan]{invoice.issue_date}[/cyan]    Currency: {currency}")
+    if invoice.place_of_issue:
+        header.append(f"  Place:       {escape(invoice.place_of_issue)}")
     if invoice.period_from or invoice.period_to:
         header.append(f"  Period:      [cyan]{invoice.period_from}[/cyan] – [cyan]{invoice.period_to}[/cyan]")
     header.append(f"  Net:         {format_amount(invoice.net_amount, currency)}")
@@ -202,8 +293,12 @@ def render_invoice_detail(invoice: Invoice, xml_path: str | None = None, qr_base
 
     # Payment
     pay = invoice.payment
-    if pay.due_date or pay.bank_account:
+    if pay.due_date or pay.bank_account or pay.paid:
         console.print("  [bold]Payment[/bold]")
+        if pay.paid == "1":
+            console.print(f"  Status:      [green]paid[/green]")
+        elif pay.due_date or pay.bank_account:
+            console.print(f"  Status:      [yellow]unpaid[/yellow]")
         if pay.due_date:
             console.print(f"  Due date:    [cyan]{pay.due_date}[/cyan]")
         if pay.payment_form:

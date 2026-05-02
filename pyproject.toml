@@ -1,17 +1,19 @@
 [project]
 name = "ksef"
-version = "2.0.0"
+version = "3.0.0.dev5"
 description = "CLI tool for browsing and managing Polish e-invoices from KSeF"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "cryptography>=46.0.4",
+    "jinja2>=3.1.6",
     "lxml>=5.0.0",
     "qrcode>=8.2",
     "requests>=2.32.5",
     "rich>=13.9.0",
     "tomli-w>=1.1.0",
     "typer>=0.15.0",
+    "weasyprint>=60.0",
 ]
 
 [project.scripts]

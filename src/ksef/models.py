@@ -7,9 +7,13 @@ from dataclasses import dataclass, field
 class Party:
     nip: str = ""
     name: str = ""
-    address: str = ""
+    address_l1: str = ""
+    address_l2: str = ""
+    country_code: str = ""
     phone: str = ""
     email: str = ""
+    jst: str = ""  # "1" = TAK, "2" = NIE, "" = absent
+    gv: str = ""   # "1" = TAK, "2" = NIE, "" = absent
 
 
 @dataclass
@@ -30,6 +34,7 @@ class PaymentInfo:
     bank_account: str = ""
     bank_name: str = ""
     swift: str = ""
+    paid: str = ""  # "1" = paid, "" = unpaid / absent
 
 
 @dataclass
@@ -40,6 +45,7 @@ class Invoice:
     currency: str = ""
     issue_date: str = ""
     due_date: str = ""
+    place_of_issue: str = ""
     period_from: str = ""
     period_to: str = ""
     seller: Party = field(default_factory=Party)

@@ -38,25 +38,21 @@ def parse_invoice(xml_content: str, ksef_number: str = "") -> Invoice:
     buyer_el = root.find("fa:Podmiot2", NS)
     fa_el = root.find("fa:Fa", NS)
 
-    seller = Party()
-    if seller_el is not None:
-        seller.nip = _find_text(seller_el, "fa:DaneIdentyfikacyjne/fa:NIP")
-        seller.name = _find_text(seller_el, "fa:DaneIdentyfikacyjne/fa:Nazwa")
-        addr1 = _find_text(seller_el, "fa:Adres/fa:AdresL1")
-        addr2 = _find_text(seller_el, "fa:Adres/fa:AdresL2")
-        seller.address = ", ".join(filter(None, [addr1, addr2]))
-        seller.phone = _find_text(seller_el, "fa:DaneKontaktowe/fa:Telefon")
-        seller.email = _find_text(seller_el, "fa:DaneKontaktowe/fa:Email")
+    def _parse_party(el: ET.Element) -> Party:
+        p = Party()
+        p.nip = _find_text(el, "fa:DaneIdentyfikacyjne/fa:NIP")
+        p.name = _find_text(el, "fa:DaneIdentyfikacyjne/fa:Nazwa")
+        p.address_l1 = _find_text(el, "fa:Adres/fa:AdresL1")
+        p.address_l2 = _find_text(el, "fa:Adres/fa:AdresL2")
+        p.country_code = _find_text(el, "fa:Adres/fa:KodKraju")
+        p.phone = _find_text(el, "fa:DaneKontaktowe/fa:Telefon")
+        p.email = _find_text(el, "fa:DaneKontaktowe/fa:Email")
+        p.jst = _find_text(el, "fa:JST")
+        p.gv = _find_text(el, "fa:GV")
+        return p
 
-    buyer = Party()
-    if buyer_el is not None:
-        buyer.nip = _find_text(buyer_el, "fa:DaneIdentyfikacyjne/fa:NIP")
-        buyer.name = _find_text(buyer_el, "fa:DaneIdentyfikacyjne/fa:Nazwa")
-        addr1 = _find_text(buyer_el, "fa:Adres/fa:AdresL1")
-        addr2 = _find_text(buyer_el, "fa:Adres/fa:AdresL2")
-        buyer.address = ", ".join(filter(None, [addr1, addr2]))
-        buyer.phone = _find_text(buyer_el, "fa:DaneKontaktowe/fa:Telefon")
-        buyer.email = _find_text(buyer_el, "fa:DaneKontaktowe/fa:Email")
+    seller = _parse_party(seller_el) if seller_el is not None else Party()
+    buyer = _parse_party(buyer_el) if buyer_el is not None else Party()
 
     invoice = Invoice(
         ksef_number=ksef_number,
@@ -69,6 +65,7 @@ def parse_invoice(xml_content: str, ksef_number: str = "") -> Invoice:
         invoice.issue_date = _find_text(fa_el, "fa:P_1")
         invoice.invoice_number = _find_text(fa_el, "fa:P_2")
         invoice.invoice_type = _find_text(fa_el, "fa:RodzajFaktury")
+        invoice.place_of_issue = _find_text(fa_el, "fa:P_1M")
         # Sum all VAT-rate buckets: P_13_1..P_13_11 + P_13_6_1..P_13_6_3
         net_buckets = [
             "fa:P_13_1", "fa:P_13_2", "fa:P_13_3", "fa:P_13_4", "fa:P_13_5",
@@ -131,6 +128,7 @@ def parse_invoice(xml_content: str, ksef_number: str = "") -> Invoice:
             payment.due_date = _find_text(platnosc, "fa:TerminPlatnosci/fa:Termin")
             form_code = _find_text(platnosc, "fa:FormaPlatnosci")
             payment.payment_form = PAYMENT_FORMS.get(form_code, form_code)
+            payment.paid = _find_text(platnosc, "fa:Zaplacono")
 
             bank = platnosc.find("fa:RachunekBankowy", NS)
             if bank is not None:

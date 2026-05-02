@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import click
 import requests
@@ -29,7 +29,6 @@ from ksef.display import (
     render_invoice_list,
 )
 from ksef.store import (
-    get_invoice_xml,
     get_invoice_xml_path,
     load_all_metadata,
     load_sync_state,
@@ -40,7 +39,6 @@ from ksef.parser import parse_invoice
 from ksef.send import check_pending_sessions, run_check_session, run_send
 from ksef.validate import validate_invoice_xml
 from ksef.sync import run_sync
-
 app = typer.Typer(
     name="ksef",
     help="Browse and manage Polish e-invoices from KSeF.",
@@ -87,6 +85,9 @@ def _print_commands_hint() -> None:
         ("ksef list", "List all invoices"),
         ("ksef show", "Show invoice details"),
         ("ksef send", "Send an invoice XML to KSeF"),
+        ("ksef export", "Render an invoice as PDF"),
+        ("ksef gen", "Generate an invoice XML from a profile"),
+        ("ksef profile", "Manage invoice generation profiles"),
         ("ksef config", "Show resolved config"),
         ("ksef -h", "Full help"),
     ]
@@ -296,25 +297,32 @@ def list_invoices(
     render_invoice_list(invoices, limit=limit)
 
 
-@app.command()
-def show(
-    ctx: typer.Context,
-    query: Optional[str] = typer.Argument(None, help="List number (#1, #2), invoice number, seller name, or KSeF number"),
-) -> None:
-    """Show invoice details including line items."""
-    if query is None:
-        console.print("Usage: ksef show <query>")
-        console.print()
-        console.print("Examples:")
-        console.print("  ksef show 1          [dim]show invoice #1 from the list[/dim]")
-        console.print("  ksef show FV/1/01    [dim]match by invoice number[/dim]")
-        console.print("  ksef show Januszex       [dim]match by seller name[/dim]")
-        raise typer.Exit(0)
+class _ResolvedInvoice(NamedTuple):
+    invoice: object  # ksef.models.Invoice
+    xml_bytes: bytes
+    xml_path: Optional[Path]
+    qr_base_url: str
+    from_store: bool
+
+
+def _resolve_invoice(ctx: typer.Context, query: str) -> _ResolvedInvoice:
+    """Resolve a query (XML file path or store query) to a parsed invoice + bytes.
+
+    For file-path mode, qr_base_url defaults to '' (config not loaded).
+    """
+    xml_path = Path(query)
+    if xml_path.suffix.lower() == ".xml" and xml_path.exists():
+        xml_bytes = xml_path.read_bytes()
+        try:
+            invoice = parse_invoice(xml_bytes.decode("utf-8"))
+        except Exception as e:
+            err_console.print(f"[red]Invalid invoice XML:[/red] {e}")
+            raise typer.Exit(1)
+        return _ResolvedInvoice(invoice, xml_bytes, xml_path, "", from_store=False)
 
     cfg = load_config(ctx.obj["config_path"])
     all_invoices = load_all_metadata(cfg)
 
-    # Resolve #N references to list position
     stripped = query.lstrip("#")
     if stripped.isdigit():
         idx = int(stripped) - 1
@@ -341,15 +349,234 @@ def show(
 
     meta = matches[0]
     ksef_number = meta["ksef_number"]
-
-    xml_content = get_invoice_xml(cfg, ksef_number)
-    if not xml_content:
+    stored_xml_path = get_invoice_xml_path(cfg, ksef_number)
+    if not stored_xml_path or not stored_xml_path.exists():
         err_console.print(f"[red]XML file not found for:[/red] {ksef_number}")
         raise typer.Exit(1)
 
-    invoice = parse_invoice(xml_content, ksef_number=ksef_number)
+    xml_bytes = stored_xml_path.read_bytes()
+    invoice = parse_invoice(xml_bytes.decode("utf-8"), ksef_number=ksef_number)
     invoice.synced_at = meta.get("synced_at", "")
-
-    xml_path = get_invoice_xml_path(cfg, ksef_number)
     qr_base_url = KSEF_QR_BASE_URLS.get(cfg.environment, KSEF_QR_BASE_URLS["prod"])
-    render_invoice_detail(invoice, xml_path=str(xml_path) if xml_path else None, qr_base_url=qr_base_url)
+    return _ResolvedInvoice(invoice, xml_bytes, stored_xml_path, qr_base_url, from_store=True)
+
+
+@app.command()
+def show(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Argument(None, help="List number (#1, #2), invoice number, seller name, or KSeF number"),
+) -> None:
+    """Show invoice details including line items."""
+    if query is None:
+        console.print("Usage: ksef show <query|file.xml>")
+        console.print()
+        console.print("Examples:")
+        console.print("  ksef show 1            [dim]show invoice #1 from the list[/dim]")
+        console.print("  ksef show FV/1/01      [dim]match by invoice number[/dim]")
+        console.print("  ksef show Januszex     [dim]match by seller name[/dim]")
+        console.print("  ksef show invoice.xml  [dim]show invoice from a local XML file[/dim]")
+        raise typer.Exit(0)
+
+    resolved = _resolve_invoice(ctx, query)
+    render_invoice_detail(
+        resolved.invoice,
+        xml_path=str(resolved.xml_path) if resolved.xml_path else None,
+        qr_base_url=resolved.qr_base_url,
+    )
+
+
+@app.command()
+def export(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="List number (#1, #2), invoice number, seller name, KSeF number, or path to XML file"),
+    output: Optional[Path] = typer.Option(None, "-o", "--output", help="Output PDF path (default: <invoice_number>.pdf in cwd)"),
+    lang: str = typer.Option("pl", "--lang", help="Output language: pl, en, pl/en, en/pl, dual (=pl/en)"),
+) -> None:
+    """Export an invoice to PDF (matching the official KSeF layout)."""
+    from ksef.pdf import LANGUAGES, render_invoice_pdf
+    if lang not in LANGUAGES:
+        err_console.print(f"[red]Invalid --lang:[/red] {lang}. Must be one of: {', '.join(LANGUAGES)}")
+        raise typer.Exit(1)
+
+    resolved = _resolve_invoice(ctx, query)
+    qr_base_url = resolved.qr_base_url
+    # File-path mode with a submitted invoice: load config to enable QR
+    if not qr_base_url and resolved.invoice.ksef_number:
+        cfg = load_config(ctx.obj["config_path"])
+        qr_base_url = KSEF_QR_BASE_URLS.get(cfg.environment, KSEF_QR_BASE_URLS["prod"])
+
+    if output is None:
+        if resolved.from_store:
+            output = Path.cwd() / f"{resolved.invoice.ksef_number}.pdf"
+        else:
+            output = resolved.xml_path.with_suffix(".pdf")
+
+    pdf_bytes = render_invoice_pdf(
+        resolved.invoice, xml_bytes=resolved.xml_bytes, qr_base_url=qr_base_url, lang=lang
+    )
+    output.write_bytes(pdf_bytes)
+    console.print(f"[green]✓[/green] {output}", highlight=False)
+
+
+# ---------------------------------------------------------------------------
+# profile sub-commands
+# ---------------------------------------------------------------------------
+
+profile_app = typer.Typer(name="profile", help="Manage invoice generation profiles.", no_args_is_help=True)
+app.add_typer(profile_app)
+
+
+@profile_app.command("vars")
+def profile_vars(ctx: typer.Context) -> None:
+    """List all Jinja2 variables available in invoice templates."""
+    rows = [
+        ("{{ invoice_number }}",       "Invoice number passed to ksef gen"),
+        ("{{ issue_date }}",           "Issue date (YYYY-MM-DD) — end of billing month by default"),
+        ("{{ period_from }}",          "First day of the billing month"),
+        ("{{ period_to }}",            "Last day of the billing month (same as issue_date)"),
+        ("{{ due_date }}",             "Payment due date — issue_date + payment_days from profile"),
+        ("{{ submission_date }}",      "Today's date (YYYY-MM-DD) — date the XML is generated"),
+        ("{{ net_amount }}",           "Net amount passed to ksef gen (e.g. 12300.00)"),
+        ("{{ vat_amount }}",           "VAT amount — net × vat_rate% from profile"),
+        ("{{ gross_amount }}",         "Gross amount — net + vat"),
+        ("{{ generation_timestamp }}", "UTC timestamp of XML generation (ISO 8601)"),
+    ]
+    console.print("[bold]Template variables:[/bold]")
+    for var, desc in rows:
+        console.print(f"  [bold cyan]{var}[/bold cyan]")
+        console.print(f"    {desc}")
+    console.print()
+    console.print(r"[dim]Any key under [bold]\[defaults][/bold] in the profile toml is also available as a variable.[/dim]")
+    console.print(r"[dim]Computed variables above always take priority over \[defaults].[/dim]")
+
+
+@profile_app.command("new")
+def profile_new(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Profile name"),
+    template: Path = typer.Argument(..., help="Path to the Jinja2 invoice XML template", exists=True, dir_okay=False),
+) -> None:
+    """Create a new profile from a Jinja2 invoice XML template."""
+    from ksef.profiles import create_profile, profile_exists
+    cfg = load_config(ctx.obj["config_path"])
+    if profile_exists(name, cfg.profiles_dir):
+        err_console.print(f"[red]Profile '{name}' already exists.[/red] Use a different name or delete it first.")
+        raise typer.Exit(1)
+    profile = create_profile(name, template, cfg.profiles_dir)
+    console.print(f"[green]Profile '{name}' created.[/green]")
+    console.print(f"  Template: {profile.template_path}")
+    console.print(f"  Config:   {profile.template_path.with_suffix('.toml')}")
+    console.print(r"  [dim]Add default template variable values under \[defaults] in the config.[/dim]")
+    console.print(f"  [dim]Run [bold]ksef profile vars[/bold] to see available template variables.[/dim]")
+
+
+@profile_app.command("list")
+def profile_list(ctx: typer.Context) -> None:
+    """List all profiles."""
+    from ksef.profiles import list_profiles
+    cfg = load_config(ctx.obj["config_path"])
+    profiles = list_profiles(cfg.profiles_dir)
+    if not profiles:
+        console.print("[dim]No profiles found. Create one with: ksef profile new <name> <template.xml>[/dim]")
+        return
+    for p in profiles:
+        console.print(f"  [bold]{p.name}[/bold]  [dim]VAT {p.vat_rate}%  ·  {p.payment_days} days  ·  {p.output_prefix!r}[/dim]")
+        console.print(f"    [dim]{p.template_path}[/dim]", highlight=False)
+
+
+@profile_app.command("show")
+def profile_show(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Profile name"),
+) -> None:
+    """Show profile configuration and file paths."""
+    from ksef.profiles import load_profile
+    cfg = load_config(ctx.obj["config_path"])
+    try:
+        profile = load_profile(name, cfg.profiles_dir)
+    except FileNotFoundError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[bold]{profile.name}[/bold]")
+    console.print(f"  VAT rate:      {profile.vat_rate}%")
+    console.print(f"  Payment days:  {profile.payment_days}")
+    console.print(f"  Output prefix: {profile.output_prefix!r}")
+    if profile.defaults:
+        console.print("  Defaults:")
+        for k, v in profile.defaults.items():
+            console.print(f"    {k} = {v!r}")
+    console.print(f"  Template:      {profile.template_path}", highlight=False)
+    console.print(f"  Config:        {profile.template_path.with_suffix('.toml')}", highlight=False)
+
+
+@profile_app.command("delete")
+def profile_delete(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Profile name"),
+) -> None:
+    """Delete a profile."""
+    from ksef.profiles import delete_profile
+    cfg = load_config(ctx.obj["config_path"])
+    try:
+        delete_profile(name, cfg.profiles_dir)
+    except FileNotFoundError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]Profile '{name}' deleted.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# gen command
+# ---------------------------------------------------------------------------
+
+@app.command()
+def gen(
+    ctx: typer.Context,
+    profile_name: str = typer.Argument(..., help="Profile name"),
+    invoice_number: str = typer.Argument(..., help="Invoice number (e.g. FV/1/0626)"),
+    amount: Optional[str] = typer.Argument(None, help="Net amount in PLN (e.g. 12300.00); falls back to profile default"),
+    output: Optional[Path] = typer.Option(None, "-o", "--output", help="Output file path (default: auto-named in cwd)"),
+    issue_today: bool = typer.Option(False, "--issue-today", help="Use today as the issue date instead of end of billing month"),
+) -> None:
+    """Generate an invoice XML from a profile template."""
+    from ksef.generate import output_filename, render_invoice, resolve_issue_date
+    from ksef.profiles import load_profile
+
+    cfg = load_config(ctx.obj["config_path"])
+
+    try:
+        profile = load_profile(profile_name, cfg.profiles_dir)
+    except FileNotFoundError as e:
+        err_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if not invoice_number.strip():
+        err_console.print("[red]Invoice number cannot be empty.[/red]")
+        raise typer.Exit(1)
+
+    issue_date = date.today() if issue_today else resolve_issue_date()
+
+    try:
+        xml_content, context_log = render_invoice(profile, invoice_number, amount, issue_date)
+    except Exception as e:
+        err_console.print(f"[red]Template rendering failed:[/red] {e}")
+        raise typer.Exit(1)
+
+    console.print("[dim]Variables:[/dim]")
+    for var, value, source in context_log:
+        console.print(f"  [dim]{var:<24} {value:<20} {source}[/dim]", highlight=False)
+    console.print()
+
+    errors = validate_invoice_xml(xml_content)
+    if errors:
+        err_console.print("[red]Generated XML failed schema validation:[/red]")
+        for e in errors:
+            err_console.print(f"  [red]•[/red] {e}")
+        raise typer.Exit(1)
+
+    out_path = output or Path.cwd() / output_filename(profile, invoice_number)
+    out_path.write_text(xml_content, encoding="utf-8")
+
+    invoice = parse_invoice(xml_content)
+    render_invoice_detail(invoice, xml_path=str(out_path))
+    console.print(f"[green]✓[/green] {out_path}", highlight=False)
